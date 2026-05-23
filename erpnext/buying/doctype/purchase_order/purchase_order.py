@@ -406,11 +406,10 @@ class PurchaseOrder(BuyingController):
 			update_bin_qty(item_code, warehouse, {"ordered_qty": get_ordered_qty(item_code, warehouse)})
 
 	def check_modified_date(self):
-		mod_db = frappe.db.sql("select modified from `tabPurchase Order` where name = %s", self.name)
-		date_diff = frappe.db.sql(f"select '{mod_db[0][0]}' - '{cstr(self.modified)}' ")
+		modified_in_db = frappe.db.get_value("Purchase Order", self.name, "modified")
 
-		if date_diff and date_diff[0][0]:
-			msgprint(
+		if modified_in_db and cstr(modified_in_db) != cstr(self.modified):
+			frappe.msgprint(
 				_("{0} {1} has been modified. Please refresh.").format(self.doctype, self.name),
 				raise_exception=True,
 			)
@@ -664,12 +663,21 @@ class PurchaseOrder(BuyingController):
 		if not self.is_against_so():
 			return
 		for item in removed_items:
+			sales_order_item = item.get("sales_order_item")
+			if not sales_order_item:
+				continue
+
 			prev_ordered_qty = flt(
-				frappe.get_cached_value("Sales Order Item", item.get("sales_order_item"), "ordered_qty")
+				frappe.get_cached_value("Sales Order Item", sales_order_item, "ordered_qty")
+			)
+			# `Sales Order Item.ordered_qty` is tracked in stock UOM (see status_updater);
+			# use the row's stock_qty so PO UOMs that differ from stock UOM decrement correctly.
+			qty_in_stock_uom = flt(item.get("stock_qty")) or flt(item.qty) * flt(
+				item.get("conversion_factor") or 1
 			)
 
 			frappe.db.set_value(
-				"Sales Order Item", item.get("sales_order_item"), "ordered_qty", prev_ordered_qty - item.qty
+				"Sales Order Item", sales_order_item, "ordered_qty", prev_ordered_qty - qty_in_stock_uom
 			)
 
 	def auto_create_subcontracting_order(self):
