@@ -653,6 +653,9 @@ class PurchaseInvoice(BuyingController):
 
 		self.process_common_party_accounting()
 
+		if self.is_return:
+			self.refresh_subscription_status()
+
 	def on_update_after_submit(self):
 		fields_to_check = [
 			"cash_bank_account",
@@ -771,6 +774,8 @@ class PurchaseInvoice(BuyingController):
 			"Serial and Batch Bundle",
 			"Tax Withholding Entry",
 		)
+
+		self.refresh_subscription_status()
 
 	def update_project(self):
 		projects = frappe._dict()
@@ -934,9 +939,9 @@ def make_regional_gl_entries(gl_entries, doc):
 
 @frappe.whitelist()
 def change_release_date(name: str, release_date: str | None = None):
-	if frappe.db.exists("Purchase Invoice", name):
-		pi = frappe.get_lazy_doc("Purchase Invoice", name)
-		pi.db_set("release_date", release_date)
+	pi = frappe.get_lazy_doc("Purchase Invoice", name)
+	pi.check_permission()
+	pi.db_set("release_date", release_date)
 
 
 @frappe.whitelist()
