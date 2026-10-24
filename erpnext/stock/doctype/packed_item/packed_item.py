@@ -46,6 +46,7 @@ class PackedItem(Document):
 		projected_qty: DF.Float
 		qty: DF.Float
 		rate: DF.Currency
+		received_qty: DF.Float
 		requested_qty: DF.Float
 		reserve_stock: DF.Check
 		serial_and_batch_bundle: DF.Link | None
@@ -56,16 +57,7 @@ class PackedItem(Document):
 		warehouse: DF.Link | None
 	# end: auto-generated types
 
-	def set_actual_and_projected_qty(self):
-		"Set actual and projected qty based on warehouse and item_code"
-		_bin = frappe.db.get_value(
-			"Bin",
-			{"item_code": self.item_code, "warehouse": self.warehouse},
-			["actual_qty", "projected_qty"],
-			as_dict=True,
-		)
-		self.actual_qty = _bin.actual_qty if _bin else 0
-		self.projected_qty = _bin.projected_qty if _bin else 0
+	pass
 
 
 def make_packing_list(doc):
@@ -242,7 +234,9 @@ def add_packed_item_row(doc, packing_item, main_item_row, packed_items_table, re
 	if not exists:
 		pi_row = doc.append("packed_items", {})
 	elif reset:  # add row if row exists but table is reset
-		pi_row.idx, pi_row.name = None, None
+		pi_row.idx = None
+		if doc.is_new():
+			pi_row.name = None
 		pi_row = doc.append("packed_items", pi_row)
 
 	if doc.is_new() and doc.get("reserve_stock"):
@@ -288,15 +282,22 @@ def update_packed_item_basic_data(main_item_row, pi_row, packing_item, item_data
 def update_packed_item_stock_data(main_item_row, pi_row, packing_item, item_data, doc):
 	# TODO batch_no, actual_batch_qty, incoming_rate
 	if main_item_row.get("so_detail"):
-		pi_row.warehouse = frappe.get_value(
-			"Packed Item",
-			{
-				"parent_detail_docname": main_item_row.so_detail,
-				"parent_item": main_item_row.item_code,
-				"item_code": packing_item.item_code,
-			},
-			"warehouse",
+		warehouse, reserve_stock = (
+			frappe.get_value(
+				"Packed Item",
+				{
+					"parent_detail_docname": main_item_row.so_detail,
+					"parent_item": main_item_row.item_code,
+					"item_code": packing_item.item_code,
+				},
+				["warehouse", "reserve_stock"],
+			)
+			or None,
+			None,
 		)
+
+		if reserve_stock:
+			pi_row.warehouse = warehouse
 
 	if not pi_row.warehouse and not doc.amended_from:
 		fetch_warehouse = doc.get("is_pos") or item_data.is_stock_item or not item_data.default_warehouse
